@@ -1,0 +1,119 @@
+version: '3.0' 
+
+networks:
+
+  net_pet:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.27.0.0/16
+
+services:
+
+  # ---------------------------- hdfs ----------------------------
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop2.7.4-java8
+    container_name: namenode
+    volumes:
+      - ./volumes/hdfs/namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=test
+    env_file:
+      - ./hadoop-hive.env
+    ports:
+      - "50070:50070"
+    networks:
+      net_pet:
+        ipv4_address: 172.27.1.5
+  
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop2.7.4-java8
+    container_name: datanode
+    volumes:
+      - ./volumes/hdfs/datanode:/hadoop/dfs/data
+    env_file:
+      - ./hadoop-hive.env
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070"
+    depends_on:
+      - namenode
+    ports:
+      - "50075:50075"
+    networks:
+      net_pet:
+        ipv4_address: 172.27.1.6
+
+  # ---------------------------- hive ----------------------------
+  hive-metastore-postgresql:
+    image: bde2020/hive-metastore-postgresql:2.3.0
+    container_name: hive-metastore-postgresql
+    depends_on:
+      - datanode
+    networks:
+      net_pet:
+        ipv4_address: 172.27.1.9
+
+  hive-metastore:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-metastore
+    env_file:
+      - ./hadoop-hive.env
+    command: /opt/hive/bin/hive --service metastore
+    environment:
+      SERVICE_PRECONDITION: "namenode:50070 datanode:50075 hive-metastore-postgresql:5432"
+    ports:
+      - "9083:9083"
+    depends_on:
+      - hive-metastore-postgresql
+    networks:
+      net_pet:
+        ipv4_address: 172.27.1.8
+  
+  hive-server:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-server
+    env_file:
+      - ./hadoop-hive.env
+    environment:
+      HIVE_CORE_CONF_javax_jdo_option_ConnectionURL: "jdbc:postgresql://hive-metastore/metastore"
+      SERVICE_PRECONDITION: "hive-metastore:9083"
+    ports:
+      - "10000:10000"
+    depends_on:
+      - hive-metastore
+    networks:
+      net_pet:
+        ipv4_address: 172.27.1.7
+
+  # ---------------------------- clickhouse ----------------------------
+  clickhouse_jdbc_bridge:
+    image: yandex/clickhouse-jdbc-bridge:2.0.2
+    container_name: clickhouse_jdbc_bridge
+    volumes: 
+      - ./volumes/clickhouse/settings/hive2.json:/app/config/datasources/hive2.json:ro
+    depends_on:
+      - hive-server
+    networks:
+      net_pet:
+        ipv4_address: 172.27.1.10
+  
+  clickhouse:
+    image: yandex/clickhouse-server:20.8.12.2
+    container_name: clickhouse
+    volumes:
+      - ./volumes/clickhouse/settings/config.xml:/etc/clickhouse-server/config.xml:ro
+      - ./volumes/clickhouse/settings/users.xml:/etc/clickhouse-server/users.xml:ro
+      - ./volumes/clickhouse/db:/var/lib/clickhouse:rw
+      - ./volumes/clickhouse/log:/var/log/clickhouse-server:rw
+    depends_on:
+      - hive-server
+      - clickhouse_jdbc_bridge
+    ports:
+      - "8123:8123"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      net_pet:
+        ipv4_address: 172.27.1.11

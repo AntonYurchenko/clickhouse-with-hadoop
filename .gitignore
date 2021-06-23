@@ -1,0 +1,3 @@
+volumes/hdfs/
+volumes/clickhouse/*
+!volumes/clickhouse/settings
