@@ -106,7 +106,6 @@ services:
       - ./volumes/clickhouse/db:/var/lib/clickhouse:rw
       - ./volumes/clickhouse/log:/var/log/clickhouse-server:rw
     depends_on:
-      - hive-server
       - clickhouse_jdbc_bridge
     ports:
       - "8123:8123"
